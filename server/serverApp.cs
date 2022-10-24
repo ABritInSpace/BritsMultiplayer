@@ -1,11 +1,15 @@
 ﻿using System;
 using System.Threading;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 
 namespace serverApp
 {
     class threads
     {
         static bool closed = false;
+        static int port = 8080;
 
         public static void log(int type, string txt)
         {
@@ -33,9 +37,30 @@ namespace serverApp
         }
         static void playerMgr()
         {
+            //list to keep track of players
+            Player[] pList = {};
             while(!closed)
             {
-                
+                IPAddress localadd = IPAddress.Parse(Dns.GetHostByName(Dns.GetHostName()).AddressList[0].ToString());
+                TcpListener listener =  new TcpListener(localadd, port);
+                listener.Start();
+                Socket client = listener.AcceptSocket();
+                //assign client thread
+                var userT = new Thread(() => {
+                    while (true)
+                    {
+                        //get length of buffer
+                        byte[] len = new byte [4];
+                        client.Receive(len);
+                        int length = BitConverter.ToInt32(len);
+                        //get buffer
+                        byte[] buffer = new byte[length];
+                        client.Receive(buffer);
+                        //print buffer text (tesing purposes)
+                        log(0, Encoding.ASCII.GetString(buffer));
+                    }
+                });
+                userT.Start(); 
             }
         }
         static void chatMgr()
@@ -45,6 +70,7 @@ namespace serverApp
         }
         static void Main(string[] args)
         {
+            //run cleanup on ctrl-c
             Console.CancelKeyPress += delegate{
                 closed = true;
                 Console.WriteLine("\nAdios!");
@@ -69,5 +95,18 @@ namespace serverApp
                 string d = Console.ReadLine();
             }
         }
+    }
+    
+    class Player 
+    {
+        public Player (string address, string name)
+        {
+            srcAddress = address;
+            Username = name;
+            UUID = Guid.NewGuid().ToString();
+        }
+        public string srcAddress { get; }
+        public string Username { get; }
+        public string UUID { get; }
     }
 }
