@@ -10,6 +10,9 @@ namespace serverApp
     {
         static bool closed = false;
         static int port = 8080;
+        static char bell = Encoding.ASCII.GetString(new byte[]{ 7 })[0];
+
+        static List<Player> pList = new List<Player>();
 
         public static void log(int type, string txt)
         {
@@ -38,26 +41,59 @@ namespace serverApp
         static void playerMgr()
         {
             //list to keep track of players
-            Player[] pList = {};
+            IPAddress localadd = IPAddress.Parse(Dns.GetHostByName(Dns.GetHostName()).AddressList[0].ToString());
+            TcpListener listener =  new TcpListener(localadd, port);
+            listener.Start();
             while(!closed)
             {
-                IPAddress localadd = IPAddress.Parse(Dns.GetHostByName(Dns.GetHostName()).AddressList[0].ToString());
-                TcpListener listener =  new TcpListener(localadd, port);
-                listener.Start();
-                Socket client = listener.AcceptSocket();
+                TcpClient cl = listener.AcceptTcpClient();
                 //assign client thread
                 var userT = new Thread(() => {
-                    while (true)
+                    TcpClient client = cl;
+                    NetworkStream ns = client.GetStream();
+                    bool established = false;
+                    bool valid = true;
+                    Player current = null;
+                    while (valid)
                     {
-                        //get length of buffer
-                        byte[] len = new byte [4];
-                        client.Receive(len);
-                        int length = BitConverter.ToInt32(len);
                         //get buffer
-                        byte[] buffer = new byte[length];
-                        client.Receive(buffer);
-                        //print buffer text (tesing purposes)
-                        log(0, Encoding.ASCII.GetString(buffer));
+                        byte[] buffer = new byte[client.ReceiveBufferSize];
+                        ns.Read(buffer, 0, client.ReceiveBufferSize);
+                        string data = Encoding.ASCII.GetString(buffer);
+                        switch(int.Parse(data[0].ToString())){
+                            case 0:
+                                IPEndPoint remote = client.Client.RemoteEndPoint as IPEndPoint;
+                                log(3, String.Format("New client connection from {0}...", remote.Address.ToString()));
+                                string inName = data.Split('-')[1];
+                                foreach (Player p in pList)
+                                {
+                                    if (p.Username == inName){
+                                        ns.Write(BitConverter.GetBytes(1), 0, BitConverter.GetBytes(0).Length);
+                                        log(1, String.Format("A remote client from {0} disconnected - username taken!", remote.Address.ToString()));
+                                        valid = false;
+                                        client.Close();
+                                        break;
+                                    }
+                                }
+                                if (valid){
+                                    current = new Player(remote.Address.ToString(), inName);
+                                    established = true;
+                                    ns.Write(BitConverter.GetBytes(0), 0, BitConverter.GetBytes(0).Length);
+                                    pList.Add(current);
+                                    log(2, String.Format("A remote client from {0} connected!\n  - Username = {1}\n  - UUID = {2}", remote.Address.ToString(), current.Username, current.UUID));
+                                }
+                                break;
+                            default:
+                                if (established == false){
+                                    client.Close();
+                                    valid = false; //client becomes invalid and therefore thread clears
+                                    break;
+                                }
+                                log(0, data);
+                                break;
+                        }
+                        //check for ship appends / deappends
+                        //check for chat rebroadcast
                     }
                 });
                 userT.Start(); 
