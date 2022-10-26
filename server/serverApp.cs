@@ -12,7 +12,6 @@ namespace serverApp
         static bool closed = false;
         static int port = 8080;
         static char bell = Encoding.ASCII.GetString(new byte[]{ 7 })[0];
-        static bool hbrec = false;
 
         public static List<Player> pList = new List<Player>();
 
@@ -46,7 +45,7 @@ namespace serverApp
             switch(code)
             {
                 case 1:
-                    log(3, "Received chat message of "+len.ToString()+" characters");
+                    log(3, "Received chat message of "+(len-2).ToString()+" characters");
                     string msg = current.Username + ": ";
                     for(int i = 0; i<=len; i++)
                     {
@@ -75,6 +74,7 @@ namespace serverApp
                     bool established = false;
                     bool valid = true;
                     Player current = null;
+                    bool hbrec = true;
                     var timeout = new Thread(() => {
                         while (true){
                             Thread.Sleep(5000);
@@ -160,6 +160,7 @@ namespace serverApp
         }
         static void Main(string[] args)
         {
+            Console.BackgroundColor = ConsoleColor.Black;
             Console.Clear();
             Console.BackgroundColor = ConsoleColor.White;
             Console.ForegroundColor = ConsoleColor.Black;
