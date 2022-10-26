@@ -18,7 +18,9 @@ namespace clientApp
             Console.Clear();
             Console.Write("Username: ");
             string username = Console.ReadLine();
-            TcpClient client = new TcpClient(Dns.GetHostByName(Dns.GetHostName()).AddressList[0].ToString(), 8080);
+            Console.Write("Address: ");
+            string address = Console.ReadLine();
+            TcpClient client = new TcpClient(address, 8080);
             NetworkStream ns = client.GetStream();
             string init = "0-"+username;
             ns.Write(ASCIIEncoding.ASCII.GetBytes(init));
