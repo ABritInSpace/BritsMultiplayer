@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\common\streamFile\streamFile.csproj" />
+    <ProjectReference Include="..\common\messageProc\messageProc.csproj" />
+    <ProjectReference Include="..\common\msgProc\msgProc.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -3,6 +3,7 @@ using System.Threading;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Reflection;
 
 namespace clientApp
 {
@@ -27,6 +28,10 @@ namespace clientApp
             byte[] code = new byte[client.ReceiveBufferSize];
             ns.Read(code, 0, client.ReceiveBufferSize);
             Console.WriteLine(BitConverter.ToInt32(code));
+            string srcTo = "2-/home/sam/Mult/BritsMultiplayer/common/other/other.csproj";
+            ns.Write(ASCIIEncoding.ASCII.GetBytes(srcTo), 0, srcTo.Length);
+            ns.Write(BitConverter.GetBytes(srcTo.Length-1), 0, 4);
+            streamFile.Receive.ClientTcp(address, "/home/sam/Mult/BritsMultiplayer/common/other/other.csproj", client);
             if (BitConverter.ToInt32(code) == 0){
                 cns = ns;
                 cls = client;

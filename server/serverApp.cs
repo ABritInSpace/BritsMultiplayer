@@ -13,6 +13,8 @@ namespace serverApp
         static int port = 8080;
         static char bell = Encoding.ASCII.GetString(new byte[]{ 7 })[0];
 
+        static TcpListener listener =  new TcpListener(IPAddress.Any, port);
+
         public static List<Player> pList = new List<Player>();
 
         public static void log(int type, string txt)
@@ -40,29 +42,25 @@ namespace serverApp
             Console.ForegroundColor = ConsoleColor.White;
             return;
         }
-        public static void tcpDecode(Player current, int code, string data, int len)
+        public static void tcpDecode(Player current, int code, string data, int len, TcpClient src)
         {
             switch(code)
             {
                 case 1:
                     log(3, "Received chat message of "+(len-2).ToString()+" characters");
-                    string msg = current.Username + ": ";
-                    for(int i = 0; i<=len; i++)
-                    {
-                        if (i > 1){
-                            msg += data[i];
-                        }else if (data[i].ToString() == string.Empty){
-                            break;
-                        }
-                    }
+                    string msg = current.Username + ": " + msgProc.Bounds.GetBounds(data, 2, len);
                     log(0, "[Chat] "+msg);
+                    break;
+                case 2:
+                    string toWrite = msgProc.Bounds.GetBounds(data, 2, len);
+                    log(3, String.Format("Sending {0} to a remote client on {1}...",toWrite,current.srcAddress));
+                    streamFile.Send.ServerTcp(current.srcAddress, toWrite, src);
                     break;
             }
         }
         static void playerMgr()
         {
             //list to keep track of players
-            TcpListener listener =  new TcpListener(IPAddress.Any, port);
             listener.Start();
             while(!closed)
             {
@@ -129,7 +127,7 @@ namespace serverApp
                                 }
                                 byte[] len = new byte [4];
                                 ns.Read(len, 0, 4);
-                                tcpDecode(current, code, data, BitConverter.ToInt32(len));
+                                tcpDecode(current, code, data, BitConverter.ToInt32(len), client);
                                 break;
                         }
                         }
@@ -148,6 +146,8 @@ namespace serverApp
                         }catch{}
                         //check for ship appends / deappends
                         //check for chat rebroadcast
+                        
+                        //end
                     }
                 });
                 userT.Start();
