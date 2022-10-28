@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\common\streamFile\streamFile.csproj" />
     <ProjectReference Include="..\common\msgProc\msgProc.csproj" />
+    <ProjectReference Include="..\common\logMgr\msgProc.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

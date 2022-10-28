@@ -4,6 +4,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Reflection;
+using players;
+using static players.playerList;
+using static logMgr.logMgr;
 
 namespace serverApp
 {
@@ -15,33 +18,6 @@ namespace serverApp
 
         static TcpListener listener =  new TcpListener(IPAddress.Any, port);
 
-        public static List<Player> pList = new List<Player>();
-
-        public static void log(int type, string txt)
-        {
-            switch(type){
-                //cases:
-                //  - 0: general
-                //  - 1: error
-                //  - 2: success
-                //  - 3: init
-                case 0:
-                    Console.ForegroundColor = ConsoleColor.White;
-                    break;
-                case 1:
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    break;
-                case 2:
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    break;
-                case 3:
-                    Console.ForegroundColor = ConsoleColor.Blue;
-                    break;
-            }
-            Console.WriteLine(txt);
-            Console.ForegroundColor = ConsoleColor.White;
-            return;
-        }
         public static void tcpDecode(Player current, int code, string data, int len, TcpClient src)
         {
             switch(code)
@@ -54,7 +30,16 @@ namespace serverApp
                 case 2:
                     string toWrite = msgProc.Bounds.GetBounds(data, 2, len);
                     log(3, String.Format("Sending {0} to a remote client on {1}...",toWrite,current.srcAddress));
-                    streamFile.Send.ServerTcp(current.srcAddress, toWrite, src);
+                    current.tO = true;
+                    streamFile.Send.Tcp(current.srcAddress, toWrite, src);
+                    current.tO = false;
+                    break;
+                case 3:
+                    string toRead = msgProc.Bounds.GetBounds(data, 2, len);
+                    log(3, String.Format("Receiving to {0} from a remote client on {1}...",toRead,current.srcAddress));
+                    current.tO = true;
+                    streamFile.Receive.Tcp(current.srcAddress, toRead, src);
+                    current.tO = false;
                     break;
             }
         }
@@ -75,13 +60,22 @@ namespace serverApp
                     bool hbrec = true;
                     var timeout = new Thread(() => {
                         while (true){
+                            try{
                             Thread.Sleep(5000);
-                            if (hbrec){
+                            if (hbrec && !current.tO){
                                 hbrec = false;
                             }
-                            else if (current != null){
+                            else if (current != null && !current.tO){
                                 current.Disconnect("Timed out");
                                 valid = false;
+                                break;
+                            }
+                            else{
+                                continue;
+                            }
+                            }
+                            catch
+                            {
                                 break;
                             }
                         }
@@ -101,11 +95,15 @@ namespace serverApp
                                 IPEndPoint remote = client.Client.RemoteEndPoint as IPEndPoint;
                                 log(3, String.Format("New client connection from {0}...", remote.Address.ToString()));
                                 string inName = data.Split('-')[1];
-                                foreach (Player p in pList)
+                                inName = inName.Split(null)[0]; //remove null characters from string
+                                log(3, "aaa");
+                                foreach (Player p in list)
                                 {
                                     if (p.Username == inName){
                                         ns.Write(BitConverter.GetBytes(1), 0, BitConverter.GetBytes(0).Length);
-                                        log(1, String.Format("A remote client from {0} disconnected - username taken!", remote.Address.ToString()));
+                                        current = new Player(null, inName, client);
+                                        current.Disconnect("name already taken");
+                                        current = null;
                                         valid = false;
                                         client.Close();
                                         break;
@@ -115,7 +113,7 @@ namespace serverApp
                                     current = new Player(remote.Address.ToString(), inName, client);
                                     established = true;
                                     ns.Write(BitConverter.GetBytes(0), 0, BitConverter.GetBytes(0).Length);
-                                    pList.Add(current);
+                                    list.Add(current);
                                     log(2, String.Format("A remote client from {0} connected!\n  - Username = {1}\n  - UUID = {2}", remote.Address.ToString(), current.Username, current.UUID));
                                 }
                                 break;
@@ -195,26 +193,5 @@ namespace serverApp
         }
     }
     
-    class Player 
-    {
-        public Player (string address, string name, TcpClient cl)
-        {
-            srcAddress = address;
-            Username = name;
-            UUID = Guid.NewGuid().ToString();
-            client = cl;
-        }
-        public string srcAddress { get; }
-        public string Username { get; }
-        public string UUID { get; }
-        public TcpClient client { get; }
-        public bool tO { get; set; } = false;
-        public void Disconnect (string reason = "N/A")
-        {
-            IPEndPoint ip = client.Client.RemoteEndPoint as IPEndPoint;
-            client.Close();
-            threads.pList.Remove(this);
-            threads.log(1, String.Format("A remote client from {0} disconnected - {1}\n  - Username = {2}\n  - UUID = {3}", ip.Address.ToString(), reason, this.Username, this.UUID));
-        }
-    }
+    
 }
