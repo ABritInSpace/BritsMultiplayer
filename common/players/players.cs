@@ -23,7 +23,7 @@ namespace players{
         {
             IPEndPoint ip = client.Client.RemoteEndPoint as IPEndPoint;
             client.Close();
-            playerList.list.Remove(this);
+            try{playerList.list.Remove(this);}catch{}
             log(1, String.Format("A remote client from {0} disconnected - {1}\n  - Username = {2}\n  - UUID = {3}", ip.Address.ToString(), reason, this.Username, this.UUID));
             this.tO = true;
         }

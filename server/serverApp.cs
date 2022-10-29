@@ -18,30 +18,34 @@ namespace serverApp
 
         static TcpListener listener =  new TcpListener(IPAddress.Any, port);
 
-        public static void tcpDecode(Player current, int code, string data, int len, TcpClient src)
+        public static bool tcpDecode(Player current, int type, string data, int len, TcpClient src)
         {
-            switch(code)
+            bool good = true; //assume good unless otherwise
+            switch(type)
             {
-                case 1:
-                    log(3, "Received chat message of "+(len-2).ToString()+" characters");
-                    string msg = current.Username + ": " + msgProc.Bounds.GetBounds(data, 2, len);
+                case 0:
+                    log(3, "Received chat message of "+len.ToString()+" characters");
+                    string msg = current.Username + ": " + data;
                     log(0, "[Chat] "+msg);
                     break;
-                case 2:
-                    string toWrite = msgProc.Bounds.GetBounds(data, 2, len);
-                    log(3, String.Format("Sending {0} to a remote client on {1}...",toWrite,current.srcAddress));
-                    current.tO = true;
-                    streamFile.Send.Tcp(current.srcAddress, toWrite, src);
-                    current.tO = false;
+                case 1:
+                    log(3, String.Format("Sending {0} to a remote client on {1}...",data,current.srcAddress));
+                    if(streamFile.Send.Tcp(current.srcAddress, data, src)){
+                        break; //don't change good - success
+                    }
+                    good = false; //change good - failure
                     break;
-                case 3:
-                    string toRead = msgProc.Bounds.GetBounds(data, 2, len);
-                    log(3, String.Format("Receiving to {0} from a remote client on {1}...",toRead,current.srcAddress));
-                    current.tO = true;
-                    streamFile.Receive.Tcp(current.srcAddress, toRead, src);
-                    current.tO = false;
+                case 2:
+                    log(3, String.Format("Receiving to {0} from a remote client on {1}...",data,current.srcAddress));
+                    if (streamFile.Receive.Tcp(current.srcAddress, data, src) != null){
+                        break; //don't change good - success
+                    }
+                    good = false; //change good - failure
+                    break;
+                default: //anything outside of case range considered a heartbeat
                     break;
             }
+            return good;
         }
         static void playerMgr()
         {
@@ -50,105 +54,85 @@ namespace serverApp
             while(!closed)
             {
                 TcpClient cl = listener.AcceptTcpClient();
+                log(3, String.Format("New client connection from {0}...", (cl.Client.RemoteEndPoint as IPEndPoint).Address.ToString()));
                 //assign client thread
-                var userT = new Thread(() => {
-                    TcpClient client = cl;
-                    NetworkStream ns = client.GetStream();
-                    bool established = false;
-                    bool valid = true;
+                var cThread = new Thread(()=> {
+                    TcpClient client = cl; //move TcpClient into thread for access
                     Player current = null;
-                    bool hbrec = true;
-                    var timeout = new Thread(() => {
-                        while (true){
-                            try{
-                            Thread.Sleep(5000);
-                            if (hbrec && !current.tO){
-                                hbrec = false;
-                            }
-                            else if (current != null && !current.tO){
-                                current.Disconnect("Timed out");
-                                valid = false;
-                                break;
-                            }
-                            else{
-                                continue;
-                            }
-                            }
-                            catch
-                            {
-                                break;
-                            }
+                    NetworkStream ns = client.GetStream(); //get network stream for writing and reading
+                    ns.ReadTimeout = 5000; //set read timeout to 5 seconds
+                    ns.WriteTimeout = 5000; //set write timeout to 5 seconds
+                    bool heartbeat = true; //heartbeat
+                    //len - length of buffer received, data - data buffer received, type - type of request
+                    byte[] type = new byte[4];
+                    byte[] len = new byte [4];
+                    try{ns.Read(len, 0, 4);}catch{goto timeout;} //read length
+                    byte[] data = new byte[BitConverter.ToInt32(len)];
+                    try{ns.Read(data, 0, BitConverter.ToInt32(len));}catch{goto timeout;} //read data
+                    //on init, data is client username, to set up a player object
+                    string name = ASCIIEncoding.ASCII.GetString(data);
+                    current = new Player((client.Client.RemoteEndPoint as IPEndPoint).Address.ToString(), name, client);
+                    foreach (Player p in list){
+                        if (p.Username == name){ //check if username is already taken
+                            try{ns.Write(BitConverter.GetBytes(1), 0, 4);}catch{goto timeout;} //return code 1 (not accepted)
+                            current.Disconnect("name already taken"); //disconnect client
+                            goto end; //kill thread
                         }
-                    });
-                    timeout.Start();
-                    while (valid)
-                    {
-                        //get buffer
-                        try{
-                        byte[] buffer = new byte[client.ReceiveBufferSize];
-                        ns.Read(buffer, 0, client.ReceiveBufferSize);
-                        string data = Encoding.ASCII.GetString(buffer);
-                        try{
-                        int code = int.Parse(data[0].ToString());
-                        switch(code){
-                            case 0:
-                                IPEndPoint remote = client.Client.RemoteEndPoint as IPEndPoint;
-                                log(3, String.Format("New client connection from {0}...", remote.Address.ToString()));
-                                string inName = data.Split('-')[1];
-                                inName = inName.Split(null)[0]; //remove null characters from string
-                                log(3, "aaa");
-                                foreach (Player p in list)
-                                {
-                                    if (p.Username == inName){
-                                        ns.Write(BitConverter.GetBytes(1), 0, BitConverter.GetBytes(0).Length);
-                                        current = new Player(null, inName, client);
-                                        current.Disconnect("name already taken");
-                                        current = null;
-                                        valid = false;
-                                        client.Close();
-                                        break;
-                                    }
-                                }
-                                if (valid){
-                                    current = new Player(remote.Address.ToString(), inName, client);
-                                    established = true;
-                                    ns.Write(BitConverter.GetBytes(0), 0, BitConverter.GetBytes(0).Length);
-                                    list.Add(current);
-                                    log(2, String.Format("A remote client from {0} connected!\n  - Username = {1}\n  - UUID = {2}", remote.Address.ToString(), current.Username, current.UUID));
-                                }
-                                break;
-                            default:
-                                if (established == false){
-                                    client.Close();
-                                    valid = false; //client becomes invalid and therefore thread clears
-                                    break;
-                                }
-                                byte[] len = new byte [4];
-                                ns.Read(len, 0, 4);
-                                tcpDecode(current, code, data, BitConverter.ToInt32(len), client);
-                                break;
-                        }
-                        }
-                        catch{
-                            if (BitConverter.ToInt32(buffer) == 80085){
-                                Int32 ping = 80085;
-                                ns.Write(BitConverter.GetBytes(ping), 0, 4);
-                                hbrec = true;
-                            }/*
-                            else{
-                                current.Disconnect("Escape signal pressed");
-                                valid = false;
-                            }
-                            */
-                        }
-                        }catch{}
-                        //check for ship appends / deappends
-                        //check for chat rebroadcast
-                        
-                        //end
                     }
+                    list.Append(current); //add current client player to list
+                    try{ns.Write(BitConverter.GetBytes(0), 0, 4);}catch{goto timeout;} //return code 0 (accepted)
+                    log(2,String.Format("Client connected successfully!\n  - Username: {0}\n  - UUID: {1}\n  - Address: {2}",current.Username,current.UUID,current.srcAddress));
+
+                    //main read loop
+                    while(true){
+                        //timeout if client not connected
+                        if(!client.Connected){
+                            goto timeout;
+                        }
+                        // *** ORDER ***
+                        // 1. Read length of data buffer
+                        // 2. Read type of request
+                        // 3. Read data buffer
+                        // 4. Write code (0 = no errors, 1 = errors)
+                        try{ns.Read(len, 0, 4);}catch{goto tcheck;} //read length
+                        try{ns.Read(type, 0, 4);}catch{goto tcheck;} //read type
+                        data = new byte[BitConverter.ToInt32(len)]; //set data buffer to length of buffer to read
+                        try{ns.Read(data, 0, BitConverter.ToInt32(len));}catch{goto timeout;} //read data
+                        //if good, send code 0, else send failure code 1
+                        if(tcpDecode(current, BitConverter.ToInt32(type), ASCIIEncoding.ASCII.GetString(data), BitConverter.ToInt32(len), client)){
+                            try{ns.Write(BitConverter.GetBytes(0), 0, 4);}catch{goto tcheck;} //return code 0 (accepted)
+                            heartbeat = true; //consider as heartbeat
+                        }
+                        else{
+                            try{ns.Write(BitConverter.GetBytes(1), 0, 4);}catch{if(client.Connected){goto tcheck;}} //return code 1 (not accepted)
+                                                                                                                     //if cannot write and client is connected, timeout
+                                                                                                                     //if not connected, will disconnect on next loop
+                        }
+                        continue;
+
+                        //check if real timeout, or if heartbeat has been sent in the meantime
+                        tcheck: 
+                        if (heartbeat){
+                            heartbeat = false;
+                            continue;
+                        }
+                        goto timeout;
+                    }
+
+                    //timeout goto if real timeout is caught, or client disconnects unexpectedly
+                    //if current.tO is flagged, client has already disconnected
+                    timeout:
+                    if (current == null){
+                        log(1, String.Format("Client on {0} timed out before initialising.", (client.Client.RemoteEndPoint as IPEndPoint).Address.ToString()));
+                        ns.Close();
+                    }else if (!current.tO){
+                        current.Disconnect("timed out.");
+                        ns.Close();
+                    }
+                    //end goto if client is disposed of within / behind loop
+                    end: ;
                 });
-                userT.Start();
+                cThread.Start();
             }
         }
         static void chatMgr()

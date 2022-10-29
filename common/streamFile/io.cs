@@ -19,6 +19,7 @@ namespace streamFile{
                 }
                 catch{
                     log(1, "Failed to send all bytes - write abort.");
+                    return false;
                 }
             }
             log(2, String.Format("Done! Sent {0} bytes.", raw.Length.ToString()));
@@ -35,6 +36,7 @@ namespace streamFile{
                 }
                 catch{
                     log(1, "Failed to send all bytes - write abort.");
+                    return false;
                 }
             }
             log(2, String.Format("Done! Sent {0} bytes.", raw.Length.ToString()));

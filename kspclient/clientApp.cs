@@ -16,75 +16,91 @@ namespace clientApp
         static TcpClient cls;
         static bool valid = true;
         static bool tO = false;
+        static List<string[]> tasklist = new List<string[]>();
+        static TcpClient client;
         static void Main(string[] args)
         {
+            start: ;
             Console.Clear();
+            //get username + address and port of server
             Console.Write("Username: ");
             string username = Console.ReadLine();
             Console.Write("Address: ");
             string address = Console.ReadLine();
-            TcpClient client = new TcpClient(address, 8080);
+            Console.Write("Port: ");
+            int port;
+            while (true){
+                try{port = int.Parse(Console.ReadLine());break;}catch{Console.WriteLine("Port invalid - try again");} //validate port as int
+            }
+            client = new TcpClient(address, port);
             NetworkStream ns = client.GetStream();
-            string init = "0-"+username;
-            ns.Write(ASCIIEncoding.ASCII.GetBytes(init));
-            byte[] code = new byte[client.ReceiveBufferSize];
-            ns.Read(code, 0, client.ReceiveBufferSize);
-            Console.WriteLine(BitConverter.ToInt32(code));
-            if (BitConverter.ToInt32(code) == 0){
-                cns = ns;
-                cls = client;
-                timeout.Start();
-                tO = true;
-                string srcTo = "2-dir here";
-                ns.Write(ASCIIEncoding.ASCII.GetBytes(srcTo), 0, srcTo.Length);
-                ns.Write(BitConverter.GetBytes(srcTo.Length-1), 0, 4);
-                streamFile.Receive.Tcp(address, System.AppDomain.CurrentDomain.BaseDirectory+"/other.csproj", client);
-                srcTo = "3-dir here";
-                ns.Write(ASCIIEncoding.ASCII.GetBytes(srcTo), 0, srcTo.Length);
-                ns.Write(BitConverter.GetBytes(srcTo.Length-1), 0, 4);
-                streamFile.Send.Tcp(address, System.AppDomain.CurrentDomain.BaseDirectory+"/other.csproj", client);
-                tO = false;
+            ns.ReadTimeout = 5000; //set read timeout to 5 seconds
+            ns.WriteTimeout = 5000; //set write timeout to 5 seconds
+            byte[] data = ASCIIEncoding.ASCII.GetBytes(username);
+            byte[] code = new byte[4];
+            try{ns.Write(BitConverter.GetBytes(data.Length), 0, 4);}catch{goto timeout;} //write length of data buffer
+            try{ns.Write(data, 0, data.Length);}catch{goto timeout;} //write data buffer
+            try{ns.Read(code, 0, 4);}catch{goto timeout;} //catch returned code
+            if(BitConverter.ToInt32(code) == 1){
+                ns.Close();
+                client.Close();
+                Console.WriteLine("Connection closed - error initializing. Hit enter to return.");
+                goto start;
             }
-            while(true){
-                if (BitConverter.ToInt32(code) == 1){
-                    Console.WriteLine("Connection end!");
-                    client.Close();
-                    ns.Close();
-                    break;
+
+            Console.WriteLine("Connection established!");
+
+            var chatThread = new Thread(() => {
+                while (client.Connected){
+                    string cmd = Console.ReadLine();
+                    if (client.Connected && cmd != null){
+                        string[] toAppend = {"0", cmd};
+                        tasklist.Add(toAppend);
+                        Console.WriteLine("Broadcasting: '"+cmd+"'");
+                    }
                 }
-                while (hbsend){}
-                string input = "1-"+Console.ReadLine();
-                byte[] buffer = ASCIIEncoding.ASCII.GetBytes(input);
-                while (hbsend){}
-                while (!valid){goto End;}
-                ns.Write(buffer, 0, buffer.Length);
-                while (hbsend){}
-                while (!valid){goto End;}
-                ns.Write(BitConverter.GetBytes(input.Length), 0, 4);
+            });
+            chatThread.Start();
+
+            //main task executor
+            while (true){
+                bool idle = true;
+                if (tasklist != null){
+                    foreach (string[] task in tasklist.ToList()){
+                        int type = int.Parse(task[0]);
+                        data = ASCIIEncoding.ASCII.GetBytes(task[1].ToString());
+                        //try 3 times if failed, else continue (server fault?)
+                        for (int i = 0; i<3; i++){
+                            try{ns.Write(BitConverter.GetBytes(data.Length), 0, 4);}catch{goto timeout;} //send length of data buffer
+                            try{ns.Write(BitConverter.GetBytes(type), 0, 4);}catch{goto timeout;} //send type of request
+                            try{ns.Write(data, 0, data.Length);}catch{goto timeout;} //send data buffer
+                            try{ns.Read(code, 0, 4);}catch{goto timeout;} //read code returned
+                            if (BitConverter.ToInt32(code) != 1){
+                                break;
+                            }
+                        }
+                        tasklist.Remove(task);
+                        idle = false;
+                    }
+                }
+                //send heartbeat if idle
+                if(idle){
+                    Thread.Sleep(10);
+                    data = ASCIIEncoding.ASCII.GetBytes("Heartbeat");
+                    try{ns.Write(BitConverter.GetBytes(data.Length), 0, 4);}catch{goto timeout;} //send length of data buffer
+                    try{ns.Write(BitConverter.GetBytes(80085), 0, 4);}catch{goto timeout;} //send type of request
+                    try{ns.Write(data, 0, data.Length);}catch{goto timeout;} //send data buffer
+                    try{ns.Read(code, 0, 4);}catch{goto timeout;} //read code returned
+                }
             }
-            End: ;
+
+            //timeout goto if timeout is detected
+            timeout: ;
+            ns.Close();
+            client.Close();
+            Console.WriteLine("Connection closed - timeout with server. Hit enter to return.");
+            Console.ReadLine();
+            goto start;
         }
-        static Thread timeout = new Thread(() => {
-            while(true){
-            Thread.Sleep(100);
-            hbsend = true;
-            Int32 ping = 80085;
-            while(tO){}
-            cns.Write(BitConverter.GetBytes(ping));
-            //cns.ReadTimeout = 5000;
-            byte[] returned = new byte[4];
-            try{cns.Read(returned, 0, 4);}
-            catch{returned = BitConverter.GetBytes(0);}
-            if (BitConverter.ToInt32(returned) != 80085 && !tO){
-                cns.Close();
-                cls.Close();
-                valid = false;
-                hbsend = false;
-                break;
-            }
-            while(tO){}
-            hbsend = false;
-            }
-        });
     }
 }
