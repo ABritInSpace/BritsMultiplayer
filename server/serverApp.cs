@@ -79,7 +79,7 @@ namespace serverApp
                             goto end; //kill thread
                         }
                     }
-                    list.Append(current); //add current client player to list
+                    list.Add(current); //add current client player to list
                     try{ns.Write(BitConverter.GetBytes(0), 0, 4);}catch{goto timeout;} //return code 0 (accepted)
                     log(2,String.Format("Client connected successfully!\n  - Username: {0}\n  - UUID: {1}\n  - Address: {2}",current.Username,current.UUID,current.srcAddress));
 
